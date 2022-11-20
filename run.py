@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import sys, os, subprocess, random
+import sys, os, subprocess, random, time
 
 if sys.version_info[0] < 3:
     print("python3 required")
@@ -46,11 +46,23 @@ def _get_fuzz_targets(project):
 def buildOSSFuzzers(project):
     try:
         os.chdir('oss-fuzz')
-        #os.system('sudo python3 infra/helper.py build_image %s' % project)
-        #os.system('sudo python3 infra/helper.py build_fuzzers --sanitizer address %s' % project)
+        # check build cache
+        try:
+            with open("../.build_cache", "r") as f:
+                cache = f.read()
+                if len(cache) == 0: cache = 0.0
+        except:
+            cache = None
+        # if there is no build cache, or last build has not exceeded 5 min, then build.
+        if cache == None or (float(cache) + 300.0) < time.time():
+            os.system('echo y | sudo python3 infra/helper.py build_image %s' % project)
+            os.system('sudo python3 infra/helper.py build_fuzzers --sanitizer address %s' % project)
         fuzz_targets = _get_fuzz_targets(project)
         for target in fuzz_targets:
             print("[%s] build OK" % target)
+        # save build cache
+        with open("../.build_cache", "w") as f:
+            f.write(str(time.time()))
     finally:
         os.chdir('..')
         return fuzz_targets
