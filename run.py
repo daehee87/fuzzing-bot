@@ -1,5 +1,12 @@
 #!/usr/bin/python3
-import sys, os, subprocess, random, time
+import sys, os, subprocess
+import random, time, requests
+import hashlib
+
+# default configurations
+SESSION_TIME = 3600
+BUILD_CACHE_TIMEOUT = 3600.0 * 24 * 7   # 1 week
+MASTER_URL = 'http://daehee.kr:7810'
 
 if sys.version_info[0] < 3:
     print("python3 required")
@@ -14,6 +21,17 @@ if subprocess.call(['which', 'git']) != 0:
     print('please install git: "sudo apt install git"')
 if subprocess.call(['which', 'docker']) != 0:
     print('please install docker: "sudo apt install docker.io"')
+
+def auth(botid):
+    global MASTER_URL
+    params = {"botid":botid}
+    ret = requests.post(MASTER_URL+'/auth', json=params)
+    ret = ret.json()
+    if ret['retcode'] != 0:
+        print('Authentication Error: %s' % ret['msg'])
+        return False
+    else:
+        return True
 
 def getOSSFuzz():
     url = 'https://github.com/google/oss-fuzz'
@@ -44,24 +62,26 @@ def _get_fuzz_targets(project):
     return fuzz_targets
 
 def buildOSSFuzzers(project):
+    global BUILD_CACHE_TIMEOUT
+
     try:
         os.chdir('oss-fuzz')
         # check build cache
         try:
-            with open("../.build_cache", "r") as f:
+            with open("../.build_cache_%s"%project, "r") as f:
                 cache = f.read()
                 if len(cache) == 0: cache = 0.0
         except:
             cache = None
-        # if there is no build cache, or last build has not exceeded 5 min, then build.
-        if cache == None or (float(cache) + 300.0) < time.time():
+        # if there is no build cache, or last build cache is invalid, then build.
+        if cache == None or (float(cache) + BUILD_CACHE_TIMEOUT) < time.time():
             os.system('echo y | sudo python3 infra/helper.py build_image %s' % project)
             os.system('sudo python3 infra/helper.py build_fuzzers --sanitizer address %s' % project)
         fuzz_targets = _get_fuzz_targets(project)
         for target in fuzz_targets:
             print("[%s] build OK" % target)
         # save build cache
-        with open("../.build_cache", "w") as f:
+        with open("../.build_cache_%s"%project, "w") as f:
             f.write(str(time.time()))
     finally:
         os.chdir('..')
@@ -81,11 +101,35 @@ def runOSSFuzzer(project, fuzzer, sec):
     finally:
         os.chdir('..')
 
+
+try:
+    botid = input('Input ID: ')
+    botid = hashlib.md5(botid.encode()).hexdigest()
+    if not auth(botid):
+        os._exit(-1)
+except:
+    print("[WARN] Error in session setup. Using default config.")
+    print("[WARN] If this problem repeats, please tell admin.")
+
 # do everything.
-if len(sys.argv) == 1:
-    getOSSFuzz()
-    fuzz_targets = buildOSSFuzzers("c-ares")
-    target = random.choice(fuzz_targets)
-    print("Running [%s]..." % target)
-    runOSSFuzzer("c-ares", target, 5)
+#if len(sys.argv) == 1:
+#    getOSSFuzz()
+#    fuzz_targets = buildOSSFuzzers("c-ares")
+#    target = random.choice(fuzz_targets)
+#    print("Running [%s]..." % target)
+#    runOSSFuzzer("c-ares", target, 5)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
