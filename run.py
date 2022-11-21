@@ -4,7 +4,7 @@ import random, time, requests
 import hashlib
 
 # default configurations
-SESSION_TIME = 3600
+SESSION_TIME = 3500
 BUILD_CACHE_TIMEOUT = 3600.0 * 24 * 7   # 1 week
 MASTER_URL = 'http://daehee.kr:7810'
 
@@ -33,6 +33,21 @@ def auth(botid):
     else:
         return True
 
+def sync_config(botid):
+    global MASTER_URL
+    global SESSION_TIME
+    global BUILD_CACHE_TIMEOUT
+    params = {"botid":botid}
+    ret = requests.post(MASTER_URL+'/config', json=params)
+    ret = ret.json()
+    if ret['retcode'] != 0:
+        print('Error while syncing configuration: %s' % ret['msg'])
+        return False
+    else:
+        SESSION_TIME = int(ret['SESSION_TIME'])
+        BUILD_CACHE_TIMEOUT = float(ret['BUILD_CACHE_TIMEOUT'])
+        return True
+
 def getOSSFuzz():
     url = 'https://github.com/google/oss-fuzz'
     if not os.path.isdir('oss-fuzz'):
@@ -43,7 +58,7 @@ def getOSSFuzz():
             os.system('git pull')
         finally:
             os.chdir('..')
-    print("oss-fuzz repo ready")
+    print("oss-fuzz repo ready, up to date")
 
 def _get_fuzz_targets(project):
     out_dir = 'build/out/%s' % project
@@ -107,28 +122,23 @@ try:
     botid = hashlib.md5(botid.encode()).hexdigest()
     if not auth(botid):
         os._exit(-1)
+    if not sync_config(botid):
+        raise 1
+    print("SESSION_TIME: " + str(SESSION_TIME))
+    print("BUILD_CACHE_TIMEOUT: " + str(BUILD_CACHE_TIMEOUT))
 except:
-    print("[WARN] Error in session setup. Using default config.")
-    print("[WARN] If this problem repeats, please tell admin.")
+    print("\033[1;33m[WARN] Error in session setup. Using default config.\033[0m")
+    print("\033[1;33m[WARN] If this problem repeats, please tell admin.\033[0m")
+    print("SESSION_TIME (default): " + str(SESSION_TIME))
+    print("BUILD_CACHE_TIMEOUT (default): " + str(BUILD_CACHE_TIMEOUT))
 
 # do everything.
-#if len(sys.argv) == 1:
-#    getOSSFuzz()
-#    fuzz_targets = buildOSSFuzzers("c-ares")
-#    target = random.choice(fuzz_targets)
-#    print("Running [%s]..." % target)
-#    runOSSFuzzer("c-ares", target, 5)
-
-
-
-
-
-
-
-
-
-
-
+if len(sys.argv) == 1:
+    getOSSFuzz()
+    fuzz_targets = buildOSSFuzzers("c-ares")
+    target = random.choice(fuzz_targets)
+    print("Running [%s]..." % target)
+    runOSSFuzzer("c-ares", target, SESSION_TIME)
 
 
 
