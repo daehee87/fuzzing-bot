@@ -3,29 +3,13 @@ import sys, os, subprocess
 import random, time, requests
 import hashlib, glob, base64
 from getpass import getpass
+import shutil
 
 # default configurations
-SESSION_TIME = 3
+SESSION_TIME = 3600
 BUILD_CACHE_TIMEOUT = 3600.0 * 24 * 7   # 1 week
 MASTER_URL = 'http://daehee.kr:7810'
 SUDO_PW = ''
-
-if sys.version_info[0] < 3:
-    print("python3 required")
-    os._exit(-1)
-
-# check directory permission
-if not os.access('.', os.R_OK | os.W_OK):
-    print("Read/Write permission required for current directory")
-    os._exit(-1)
-
-print("checking tools...")
-if subprocess.call(['which', 'git']) != 0:
-    print('please install git: "sudo apt install git"')
-if subprocess.call(['which', 'docker']) != 0:
-    print('please install docker: "sudo apt install docker.io"')
-if subprocess.call(['which', 'unzip']) != 0:
-    print('please install unzip: "sudo apt install unzip"')
 
 def update_sudo():
     global SUDO_PW
@@ -171,6 +155,24 @@ def runOSSFuzzer(project, fuzzer, sec):
 
 if __name__ == "__main__":
     print("fuzzing-bot client version 1.0")
+    if sys.version_info[0] < 3:
+        print("python3 required")
+        os._exit(-1)
+
+    # check directory permission
+    if not os.access('.', os.R_OK | os.W_OK):
+        print("Read/Write permission required for current directory")
+        os._exit(-1)
+
+    print("checking tools...")
+    if subprocess.call(['which', 'git']) != 0:
+        print('please install git: "sudo apt install git"')
+    if subprocess.call(['which', 'docker']) != 0:
+        print('please install docker: "sudo apt install docker.io"')
+    if subprocess.call(['which', 'unzip']) != 0:
+        print('please install unzip: "sudo apt install unzip"')
+    print("basic tools are available")
+
     botid = input('input your ID: ')
     botid = hashlib.md5(botid.encode()).hexdigest()
     try:
@@ -185,7 +187,7 @@ if __name__ == "__main__":
       
     if os.getlogin() != 'root':
         SUDO_PW = getpass('[sudo] password for %s :' % os.getlogin())
-        cmd = 'sudo -k; echo %s | sudo -S id' % SUDO_PW
+        cmd = 'sudo -k; echo %s | sudo -S id 2>/dev/null' % SUDO_PW
         sp = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
         out, err = sp.communicate()
         out = out.decode()
@@ -193,6 +195,10 @@ if __name__ == "__main__":
             print("Wrong password.")
             os._exit(-1)
 
+    total, used, free = shutil.disk_usage("/")
+    free = free // (2**30)  # Free gigabytes available
+    print("available disk space: %d GB" % free)
+    project_list = []
     while True:
         try:
             if not sync_config(botid): raise 1
@@ -208,21 +214,27 @@ if __name__ == "__main__":
         getOSSFuzz()
 
         # get project list
-        project_list = os.listdir('oss-fuzz/projects')
-        project_list.remove('all.sh')
-        
+        tmp_list = os.listdir('oss-fuzz/projects')
+        tmp_list.remove('all.sh')
+
+        if len(project_list)==0:
+            total_count = len(tmp_list)
+            max_count = int(free / 5)    # 5 gigabytes per project
+            if max_count < total_count:
+                project_list = random.sample(tmp_list, max_count)
+            else:
+                project_list = tmp_list
+
+        print("Target project list => %s" % project_list)
         project = random.choice( project_list )
         fuzz_targets = buildOSSFuzzers(project)
         if len(fuzz_targets) == 0:
             continue
 
         # configure this better in the future.
-        fuzz_targets = random.sample(fuzz_targets, 100)
         fuzzer = random.choice(fuzz_targets)
 
         print("Running [%s/%s]..." % (project,fuzzer))
         runOSSFuzzer(project, fuzzer, SESSION_TIME)
-
-
 
 
