@@ -60,6 +60,7 @@ def _get_fuzz_targets(project):
     for name in os.listdir(out_dir):
         if name.startswith('afl-'): continue
         if name.startswith('jazzer_'): continue
+        if name.endswith('.jar'): continue
         if name == 'llvm-symbolizer': continue
 
         path = os.path.join(out_dir, name)
@@ -128,7 +129,6 @@ def runOSSFuzzer(project, fuzzer, sec):
         params['crash_count'] = 0
         params['project'] = project
         params['fuzzer'] = fuzzer
-        print(crash_list)
         if len(crash_list) > 0:
             params['crash_count'] = len(crash_list)
             i = 0
@@ -236,5 +236,7 @@ if __name__ == "__main__":
 
         print("Running [%s/%s]..." % (project,fuzzer))
         runOSSFuzzer(project, fuzzer, SESSION_TIME)
+
+        time.sleep(3)   # time to ctrl-c
 
 
