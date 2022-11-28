@@ -135,6 +135,7 @@ def runOSSFuzzer(project, fuzzer, sec):
             for crash in crash_list:
                 with open(crash, 'rb') as f:
                     buf = f.read()
+                if len(buf) == 0: continue
                 params['crash-%d'%i] = base64.b64encode(buf).decode('ascii')
         ret = requests.post(MASTER_URL+'/report', json=params)
         ret = ret.json()
