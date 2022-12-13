@@ -41,6 +41,21 @@ def sync_config(botid):
         BUILD_CACHE_TIMEOUT = float(ret['BUILD_CACHE_TIMEOUT'])
         return True
 
+def download_poc(botid, poc_name):
+    global MASTER_URL
+    global SESSION_TIME
+    global BUILD_CACHE_TIMEOUT
+    params = {"botid":botid, "poc_name":poc_name}
+    ret = requests.post(MASTER_URL+'/download', json=params)
+    ret = ret.json()
+    if ret['retcode'] != 0:
+        print('Error while downloading poc: %s' % poc_name)
+        return False
+    else:
+        poc_b64 = ret['poc_b64']
+        poc = base64.b64decode(poc_b64)
+        return poc
+
 def getOSSFuzz():
     url = 'https://github.com/google/oss-fuzz'
     if not os.path.isdir('oss-fuzz'):
@@ -143,19 +158,39 @@ def runOSSFuzzer(project, fuzzer, sec):
             print('\033[1;31m[WARN] Report Error: %s\033[0m' % ret['msg'])
         else:
             print('\033[1;32m[INFO] Report OK\033[0m')
-            update_sudo()
-            # move crash files to local folder.
-            os.system('mkdir -p %s/%s 2>/dev/null' % (project, fuzzer))
-            os.system('sudo mv build/out/%s/crash-* %s/%s' % (project, fuzzer))
 
     except Exception as ex:
         print(ex)
     finally:
         os.chdir('..')
 
+def verifyCrash(project, fuzzer, botid, poc):
+    try:
+        # download/prepare poc (skip if repeat)
+        os.chdir('oss-fuzz')
+        update_sudo()
+        cmd = 'sudo mkdir build/out/%s/%s_poc 2>/dev/null && ' % (project,fuzzer)
+        cmd += 'sudo chmod 777 build/out/%s/%s_poc' % (project,fuzzer)
+        os.system(cmd)
+
+        # writable-folder ready for poc download
+        with open("build/out/%s/%s_poc/%s" % (project, fuzzer, poc), "wb") as f:
+            f.write( download_poc(botid, poc) )
+        
+        # run poc test
+        cmd = 'sudo python3 infra/helper.py run_fuzzer '
+        cmd += '%s %s ' % (project, fuzzer)
+        cmd += "'%s_poc/%s" % (fuzzer, poc)
+        cmd += " #'"
+        os.system(cmd)
+
+    except Exception as ex:
+        print(ex)
+    finally:
+        os.chdir('..')
 
 if __name__ == "__main__":
-    print("fuzzing-bot client version 1.0")
+    print("fuzzing-bot client version 1.1")
     if sys.version_info[0] < 3:
         print("python3 required")
         os._exit(-1)
@@ -213,6 +248,22 @@ if __name__ == "__main__":
 
         # sync/download oss-fuzz repo
         getOSSFuzz()
+
+        # crash verification mode
+        if len(sys.argv) == 3:
+            if sys.argv[1] == 'verify':
+                project = sys.argv[2].split('--')[0]
+                fuzzer = sys.argv[2].split('--')[1]
+                poc = sys.argv[2]
+
+                # we need to build project to verify crash
+                fuzz_targets = buildOSSFuzzers(project)
+                if len(fuzz_targets) == 0:
+                    print("ERROR. Failed to build target project.")
+                    break
+
+                verifyCrash(project, fuzzer, botid, poc)
+                break
 
         # get project list
         tmp_list = os.listdir('oss-fuzz/projects')
